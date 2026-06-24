@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { useCredentials, useAddCredential, useDeleteCredential } from '@/hooks/use-credentials'
 import { getCredentialBalance, setCredentialDisabled } from '@/api/credentials'
 import { extractErrorMessage } from '@/lib/utils'
+import { getImportBalanceDisplay } from '@/lib/import-balance'
 
 interface BatchImportDialogProps {
   open: boolean
@@ -39,6 +40,7 @@ interface VerificationResult {
   status: 'pending' | 'checking' | 'verifying' | 'verified' | 'duplicate' | 'failed'
   error?: string
   usage?: string
+  balanceWarning?: string
   email?: string
   credentialId?: number
   rollbackStatus?: 'success' | 'failed' | 'skipped'
@@ -210,8 +212,11 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
           // 延迟 1 秒
           await new Promise(resolve => setTimeout(resolve, 1000))
 
-          // 验活
-          const balance = await getCredentialBalance(addedCred.credentialId)
+          const balanceDisplay = await getImportBalanceDisplay(
+            addedCred.credentialId,
+            getCredentialBalance,
+            extractErrorMessage
+          )
 
           // 验活成功
           successCount++
@@ -222,7 +227,10 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
             newResults[i] = {
               ...newResults[i],
               status: 'verified',
-              usage: `${balance.currentUsage}/${balance.usageLimit}`,
+              usage: balanceDisplay.usage,
+              balanceWarning: balanceDisplay.balanceError
+                ? `余额查询失败：${balanceDisplay.balanceError}`
+                : undefined,
               email: addedCred.email || undefined,
               credentialId: addedCred.credentialId
             }
@@ -310,7 +318,7 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
       case 'verifying':
         return '验活中...'
       case 'verified':
-        return '验活成功'
+        return result.balanceWarning ? '导入成功（余额未验证）' : '验活成功'
       case 'duplicate':
         return '重复凭据'
       case 'failed':
@@ -405,6 +413,11 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
                         {result.usage && (
                           <div className="text-xs text-muted-foreground mt-1">
                             用量: {result.usage}
+                          </div>
+                        )}
+                        {result.balanceWarning && (
+                          <div className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                            {result.balanceWarning}
                           </div>
                         )}
                         {result.error && (

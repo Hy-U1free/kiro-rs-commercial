@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { useCredentials, useAddCredential, useDeleteCredential } from '@/hooks/use-credentials'
 import { getCredentialBalance, setCredentialDisabled } from '@/api/credentials'
 import { extractErrorMessage } from '@/lib/utils'
+import { getImportBalanceDisplay } from '@/lib/import-balance'
 
 interface KamImportDialogProps {
   open: boolean
@@ -44,6 +45,7 @@ interface VerificationResult {
   status: 'pending' | 'checking' | 'verifying' | 'verified' | 'duplicate' | 'failed' | 'skipped'
   error?: string
   usage?: string
+  balanceWarning?: string
   email?: string
   credentialId?: number
   rollbackStatus?: 'success' | 'failed' | 'skipped'
@@ -304,7 +306,11 @@ export function KamImportDialog({ open, onOpenChange }: KamImportDialogProps) {
 
           await new Promise(resolve => setTimeout(resolve, 1000))
 
-          const balance = await getCredentialBalance(addedCred.credentialId)
+          const balanceDisplay = await getImportBalanceDisplay(
+            addedCred.credentialId,
+            getCredentialBalance,
+            extractErrorMessage
+          )
 
           successCount++
           existingTokenHashes.add(tokenHash)
@@ -314,7 +320,10 @@ export function KamImportDialog({ open, onOpenChange }: KamImportDialogProps) {
             next[i] = {
               ...next[i],
               status: 'verified',
-              usage: `${balance.currentUsage}/${balance.usageLimit}`,
+              usage: balanceDisplay.usage,
+              balanceWarning: balanceDisplay.balanceError
+                ? `余额查询失败：${balanceDisplay.balanceError}`
+                : undefined,
               email: addedCred.email || account.email,
               credentialId: addedCred.credentialId,
             }
@@ -393,7 +402,7 @@ export function KamImportDialog({ open, onOpenChange }: KamImportDialogProps) {
       case 'pending': return '等待中'
       case 'checking': return '检查重复...'
       case 'verifying': return '验活中...'
-      case 'verified': return '验活成功'
+      case 'verified': return result.balanceWarning ? '导入成功（余额未验证）' : '验活成功'
       case 'duplicate': return '重复凭据'
       case 'skipped': return '已跳过（error 状态）'
       case 'failed':
@@ -530,6 +539,9 @@ export function KamImportDialog({ open, onOpenChange }: KamImportDialogProps) {
                         </div>
                         {result.usage && (
                           <div className="text-xs text-muted-foreground mt-1">用量: {result.usage}</div>
+                        )}
+                        {result.balanceWarning && (
+                          <div className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">{result.balanceWarning}</div>
                         )}
                         {result.error && (
                           <div className="text-xs text-red-600 dark:text-red-400 mt-1">{result.error}</div>

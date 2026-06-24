@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test:import-balance": "node scripts/test-import-balance.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
