@@ -28,6 +28,7 @@ export function EditCredentialDialog({ open, onOpenChange, credential }: EditCre
   const [scopes, setScopes] = useState('')
   const [issuerUrl, setIssuerUrl] = useState('')
   const [provider, setProvider] = useState('')
+  const [profileArn, setProfileArn] = useState('')
   const [machineId, setMachineId] = useState('')
   const [proxyUrl, setProxyUrl] = useState('')
   const [proxyUsername, setProxyUsername] = useState('')
@@ -46,6 +47,7 @@ export function EditCredentialDialog({ open, onOpenChange, credential }: EditCre
       setScopes('')
       setIssuerUrl('')
       setProvider('')
+      setProfileArn('')
       setMachineId('')
       setProxyUrl(credential.proxyUrl || '')
       setProxyUsername('')
@@ -66,6 +68,7 @@ export function EditCredentialDialog({ open, onOpenChange, credential }: EditCre
     if (scopes !== '') data.scopes = scopes
     if (issuerUrl !== '') data.issuerUrl = issuerUrl
     if (provider !== '') data.provider = provider
+    if (profileArn !== '') data.profileArn = profileArn
     if (machineId !== '') data.machineId = machineId
     if (proxyUrl !== (credential.proxyUrl || '')) data.proxyUrl = proxyUrl
     if (proxyUsername !== '') data.proxyUsername = proxyUsername
@@ -197,6 +200,15 @@ export function EditCredentialDialog({ open, onOpenChange, credential }: EditCre
                     placeholder="Leave blank to keep unchanged"
                     value={provider}
                     onChange={(e) => setProvider(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Profile ARN</label>
+                  <Input
+                    placeholder="Leave blank to keep unchanged"
+                    value={profileArn}
+                    onChange={(e) => setProfileArn(e.target.value)}
                     disabled={isPending}
                   />
                 </div>

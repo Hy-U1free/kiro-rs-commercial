@@ -68,6 +68,7 @@ export interface AddCredentialRequest {
   scopes?: string
   issuerUrl?: string
   provider?: string
+  profileArn?: string
   priority?: number
   authRegion?: string
   apiRegion?: string
@@ -87,6 +88,7 @@ export interface UpdateCredentialRequest {
   scopes?: string
   issuerUrl?: string
   provider?: string
+  profileArn?: string
   authRegion?: string
   apiRegion?: string
   machineId?: string

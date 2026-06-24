@@ -34,9 +34,11 @@ interface KamAccount {
     scopes?: string
     issuerUrl?: string
     provider?: string
+    profileArn?: string
     startUrl?: string
   }
   machineId?: string
+  profileArn?: string
   status?: string
 }
 
@@ -86,6 +88,7 @@ function normalizeToKamAccount(item: unknown): unknown {
       scopes,
       issuerUrl,
       provider,
+      profileArn,
       startUrl,
       ...rest
     } = obj
@@ -101,6 +104,7 @@ function normalizeToKamAccount(item: unknown): unknown {
         scopes,
         issuerUrl,
         provider,
+        profileArn,
         startUrl,
       },
     }
@@ -274,6 +278,8 @@ export function KamImportDialog({ open, onOpenChange }: KamImportDialogProps) {
           const scopes = cred.scopes?.trim() || undefined
           const issuerUrl = cred.issuerUrl?.trim() || undefined
           const provider = cred.provider?.trim() || undefined
+          const profileArn =
+            cred.profileArn?.trim() || account.profileArn?.trim() || undefined
           const isExternalIdp =
             cred.authMethod?.trim().toLowerCase() === 'external_idp' ||
             provider?.toLowerCase() === 'externalidp' ||
@@ -299,6 +305,7 @@ export function KamImportDialog({ open, onOpenChange }: KamImportDialogProps) {
             scopes,
             issuerUrl,
             provider,
+            profileArn,
             machineId: account.machineId?.trim() || undefined,
           })
 

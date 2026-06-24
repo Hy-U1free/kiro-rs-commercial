@@ -28,6 +28,7 @@ interface CredentialInput {
   scopes?: string
   issuerUrl?: string
   provider?: string
+  profileArn?: string
   region?: string
   authRegion?: string
   apiRegion?: string
@@ -177,6 +178,7 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
           const scopes = cred.scopes?.trim() || undefined
           const issuerUrl = cred.issuerUrl?.trim() || undefined
           const provider = cred.provider?.trim() || undefined
+          const profileArn = cred.profileArn?.trim() || undefined
           const isExternalIdp =
             cred.authMethod?.trim().toLowerCase() === 'external_idp' ||
             provider?.toLowerCase() === 'externalidp' ||
@@ -203,6 +205,7 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
             scopes,
             issuerUrl,
             provider,
+            profileArn,
             priority: cred.priority || 0,
             machineId: cred.machineId?.trim() || undefined,
           })

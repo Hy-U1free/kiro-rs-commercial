@@ -100,6 +100,9 @@ pub struct AddCredentialRequest {
     /// OAuth provider name (External IdP metadata)
     pub provider: Option<String>,
 
+    /// Kiro enterprise profile ARN, required by some usage APIs.
+    pub profile_arn: Option<String>,
+
     /// 优先级（可选，默认 0）
     #[serde(default)]
     pub priority: u32,
@@ -175,6 +178,9 @@ pub struct UpdateCredentialRequest {
 
     /// OAuth provider name (External IdP metadata)
     pub provider: Option<String>,
+
+    /// Kiro enterprise profile ARN, required by some usage APIs.
+    pub profile_arn: Option<String>,
 
     /// 凭据级 Auth Region（用于 Token 刷新）
     pub auth_region: Option<String>,
@@ -424,7 +430,8 @@ mod tests {
             "tokenEndpoint": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
             "scopes": "api://example/.default offline_access",
             "issuerUrl": "https://login.microsoftonline.com/tenant/v2.0",
-            "provider": "ExternalIdp"
+            "provider": "ExternalIdp",
+            "profileArn": "arn:aws:codewhisperer:us-east-1:123456789012:profile/external-idp"
         }"#;
 
         let req: AddCredentialRequest = serde_json::from_str(json).unwrap();
@@ -444,5 +451,9 @@ mod tests {
             Some("https://login.microsoftonline.com/tenant/v2.0".to_string())
         );
         assert_eq!(req.provider, Some("ExternalIdp".to_string()));
+        assert_eq!(
+            req.profile_arn,
+            Some("arn:aws:codewhisperer:us-east-1:123456789012:profile/external-idp".to_string())
+        );
     }
 }

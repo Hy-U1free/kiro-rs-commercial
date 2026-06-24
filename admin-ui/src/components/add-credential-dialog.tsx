@@ -30,6 +30,7 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
   const [scopes, setScopes] = useState('')
   const [issuerUrl, setIssuerUrl] = useState('')
   const [provider, setProvider] = useState('')
+  const [profileArn, setProfileArn] = useState('')
   const [priority, setPriority] = useState('0')
   const [machineId, setMachineId] = useState('')
   const [proxyUrl, setProxyUrl] = useState('')
@@ -49,6 +50,7 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
     setScopes('')
     setIssuerUrl('')
     setProvider('')
+    setProfileArn('')
     setPriority('0')
     setMachineId('')
     setProxyUrl('')
@@ -88,6 +90,7 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
         scopes: scopes.trim() || undefined,
         issuerUrl: issuerUrl.trim() || undefined,
         provider: provider.trim() || undefined,
+        profileArn: profileArn.trim() || undefined,
         priority: parseInt(priority) || 0,
         machineId: machineId.trim() || undefined,
         proxyUrl: proxyUrl.trim() || undefined,
@@ -262,6 +265,16 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
                     placeholder="ExternalIdp"
                     value={provider}
                     onChange={(e) => setProvider(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="profileArn" className="text-sm font-medium">Profile ARN</label>
+                  <Input
+                    id="profileArn"
+                    placeholder="arn:aws:codewhisperer:..."
+                    value={profileArn}
+                    onChange={(e) => setProfileArn(e.target.value)}
                     disabled={isPending}
                   />
                 </div>

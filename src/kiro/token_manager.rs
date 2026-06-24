@@ -1714,6 +1714,9 @@ impl MultiTokenManager {
         validated_cred.scopes = new_cred.scopes;
         validated_cred.issuer_url = new_cred.issuer_url;
         validated_cred.provider = new_cred.provider;
+        if new_cred.profile_arn.is_some() {
+            validated_cred.profile_arn = new_cred.profile_arn;
+        }
         validated_cred.region = new_cred.region;
         validated_cred.auth_region = new_cred.auth_region;
         validated_cred.api_region = new_cred.api_region;
@@ -1821,6 +1824,13 @@ impl MultiTokenManager {
                         Some(provider.clone())
                     };
                 }
+                if let Some(ref profile_arn) = update.profile_arn {
+                    cred.profile_arn = if profile_arn.is_empty() {
+                        None
+                    } else {
+                        Some(profile_arn.clone())
+                    };
+                }
                 if let Some(ref ar) = update.auth_region {
                     cred.auth_region = if ar.is_empty() { None } else { Some(ar.clone()) };
                 }
@@ -1907,6 +1917,13 @@ impl MultiTokenManager {
                 None
             } else {
                 Some(provider.clone())
+            };
+        }
+        if let Some(ref profile_arn) = update.profile_arn {
+            cred.profile_arn = if profile_arn.is_empty() {
+                None
+            } else {
+                Some(profile_arn.clone())
             };
         }
         if let Some(ref ar) = update.auth_region {
@@ -2292,6 +2309,9 @@ mod tests {
             scopes: Some("api://example/.default offline_access".to_string()),
             issuer_url: Some("https://login.microsoftonline.com/tenant/v2.0".to_string()),
             provider: Some("ExternalIdp".to_string()),
+            profile_arn: Some(
+                "arn:aws:codewhisperer:us-east-1:123456789012:profile/external-idp".to_string(),
+            ),
             auth_region: None,
             api_region: None,
             machine_id: None,
@@ -2317,6 +2337,10 @@ mod tests {
             Some("https://login.microsoftonline.com/tenant/v2.0".to_string())
         );
         assert_eq!(credentials.provider, Some("ExternalIdp".to_string()));
+        assert_eq!(
+            credentials.profile_arn,
+            Some("arn:aws:codewhisperer:us-east-1:123456789012:profile/external-idp".to_string())
+        );
 
         let clear_update = crate::admin::types::UpdateCredentialRequest {
             refresh_token: None,
@@ -2327,6 +2351,7 @@ mod tests {
             scopes: Some(String::new()),
             issuer_url: Some(String::new()),
             provider: Some(String::new()),
+            profile_arn: Some(String::new()),
             auth_region: None,
             api_region: None,
             machine_id: None,
@@ -2341,6 +2366,7 @@ mod tests {
         assert_eq!(credentials.scopes, None);
         assert_eq!(credentials.issuer_url, None);
         assert_eq!(credentials.provider, None);
+        assert_eq!(credentials.profile_arn, None);
     }
 
     #[tokio::test]
