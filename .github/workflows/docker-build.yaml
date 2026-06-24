@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/external-idp-support
     tags:
       - 'v*'
   workflow_dispatch:
@@ -87,6 +88,7 @@ jobs:
           tags: |
             ${{ steps.image.outputs.image }}:${{ steps.version.outputs.version }}
             ${{ steps.image.outputs.image }}:beta
+            ${{ github.ref_name == 'feature/external-idp-support' && format('{0}:external-idp', steps.image.outputs.image) || '' }}
             ${{ steps.version.outputs.is_beta != 'true' && format('{0}:latest', steps.image.outputs.image) || '' }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
