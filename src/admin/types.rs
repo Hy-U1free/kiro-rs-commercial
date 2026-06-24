@@ -88,6 +88,18 @@ pub struct AddCredentialRequest {
     /// OIDC Client Secret（IdC 认证需要）
     pub client_secret: Option<String>,
 
+    /// OAuth token endpoint (External IdP)
+    pub token_endpoint: Option<String>,
+
+    /// OAuth scopes (External IdP)
+    pub scopes: Option<String>,
+
+    /// OAuth issuer URL (External IdP metadata)
+    pub issuer_url: Option<String>,
+
+    /// OAuth provider name (External IdP metadata)
+    pub provider: Option<String>,
+
     /// 优先级（可选，默认 0）
     #[serde(default)]
     pub priority: u32,
@@ -151,6 +163,18 @@ pub struct UpdateCredentialRequest {
 
     /// OIDC Client Secret（可选）
     pub client_secret: Option<String>,
+
+    /// OAuth token endpoint (External IdP)
+    pub token_endpoint: Option<String>,
+
+    /// OAuth scopes (External IdP)
+    pub scopes: Option<String>,
+
+    /// OAuth issuer URL (External IdP metadata)
+    pub issuer_url: Option<String>,
+
+    /// OAuth provider name (External IdP metadata)
+    pub provider: Option<String>,
 
     /// 凭据级 Auth Region（用于 Token 刷新）
     pub auth_region: Option<String>,
@@ -385,4 +409,40 @@ fn default_read_ratio() -> f64 {
 
 fn default_creation_ratio() -> f64 {
     0.10
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_admin_external_idp_add_request_deserializes_metadata() {
+        let json = r#"{
+            "refreshToken": "refresh-token",
+            "authMethod": "external_idp",
+            "clientId": "client-123",
+            "tokenEndpoint": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
+            "scopes": "api://example/.default offline_access",
+            "issuerUrl": "https://login.microsoftonline.com/tenant/v2.0",
+            "provider": "ExternalIdp"
+        }"#;
+
+        let req: AddCredentialRequest = serde_json::from_str(json).unwrap();
+
+        assert_eq!(req.auth_method, "external_idp");
+        assert_eq!(req.client_id, Some("client-123".to_string()));
+        assert_eq!(
+            req.token_endpoint,
+            Some("https://login.microsoftonline.com/tenant/oauth2/v2.0/token".to_string())
+        );
+        assert_eq!(
+            req.scopes,
+            Some("api://example/.default offline_access".to_string())
+        );
+        assert_eq!(
+            req.issuer_url,
+            Some("https://login.microsoftonline.com/tenant/v2.0".to_string())
+        );
+        assert_eq!(req.provider, Some("ExternalIdp".to_string()));
+    }
 }

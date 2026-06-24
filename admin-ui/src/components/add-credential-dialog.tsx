@@ -17,7 +17,7 @@ interface AddCredentialDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-type AuthMethod = 'social' | 'idc'
+type AuthMethod = 'social' | 'idc' | 'external_idp'
 
 export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogProps) {
   const [refreshToken, setRefreshToken] = useState('')
@@ -26,6 +26,10 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
   const [apiRegion, setApiRegion] = useState('')
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
+  const [tokenEndpoint, setTokenEndpoint] = useState('')
+  const [scopes, setScopes] = useState('')
+  const [issuerUrl, setIssuerUrl] = useState('')
+  const [provider, setProvider] = useState('')
   const [priority, setPriority] = useState('0')
   const [machineId, setMachineId] = useState('')
   const [proxyUrl, setProxyUrl] = useState('')
@@ -41,6 +45,10 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
     setApiRegion('')
     setClientId('')
     setClientSecret('')
+    setTokenEndpoint('')
+    setScopes('')
+    setIssuerUrl('')
+    setProvider('')
     setPriority('0')
     setMachineId('')
     setProxyUrl('')
@@ -63,6 +71,11 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
       return
     }
 
+    if (authMethod === 'external_idp' && (!clientId.trim() || !tokenEndpoint.trim())) {
+      toast.error('External IdP requires Client ID and Token Endpoint')
+      return
+    }
+
     mutate(
       {
         refreshToken: refreshToken.trim(),
@@ -71,6 +84,10 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
         apiRegion: apiRegion.trim() || undefined,
         clientId: clientId.trim() || undefined,
         clientSecret: clientSecret.trim() || undefined,
+        tokenEndpoint: tokenEndpoint.trim() || undefined,
+        scopes: scopes.trim() || undefined,
+        issuerUrl: issuerUrl.trim() || undefined,
+        provider: provider.trim() || undefined,
         priority: parseInt(priority) || 0,
         machineId: machineId.trim() || undefined,
         proxyUrl: proxyUrl.trim() || undefined,
@@ -128,6 +145,7 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
               >
                 <option value="social">Social</option>
                 <option value="idc">IdC/Builder-ID/IAM</option>
+                <option value="external_idp">External IdP</option>
               </select>
             </div>
 
@@ -191,6 +209,65 @@ export function AddCredentialDialog({ open, onOpenChange }: AddCredentialDialogP
             )}
 
             {/* 优先级 */}
+            {authMethod === 'external_idp' && (
+              <>
+                <div className="space-y-2">
+                  <label htmlFor="externalClientId" className="text-sm font-medium">
+                    Client ID <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    id="externalClientId"
+                    placeholder="Microsoft OAuth client ID"
+                    value={clientId}
+                    onChange={(e) => setClientId(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="tokenEndpoint" className="text-sm font-medium">
+                    Token Endpoint <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    id="tokenEndpoint"
+                    placeholder="https://login.microsoftonline.com/.../oauth2/v2.0/token"
+                    value={tokenEndpoint}
+                    onChange={(e) => setTokenEndpoint(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="scopes" className="text-sm font-medium">Scopes</label>
+                  <Input
+                    id="scopes"
+                    placeholder="api://... offline_access"
+                    value={scopes}
+                    onChange={(e) => setScopes(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="issuerUrl" className="text-sm font-medium">Issuer URL</label>
+                  <Input
+                    id="issuerUrl"
+                    placeholder="https://login.microsoftonline.com/.../v2.0"
+                    value={issuerUrl}
+                    onChange={(e) => setIssuerUrl(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="provider" className="text-sm font-medium">Provider</label>
+                  <Input
+                    id="provider"
+                    placeholder="ExternalIdp"
+                    value={provider}
+                    onChange={(e) => setProvider(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+              </>
+            )}
+
             <div className="space-y-2">
               <label htmlFor="priority" className="text-sm font-medium">
                 优先级

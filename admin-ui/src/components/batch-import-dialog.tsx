@@ -20,8 +20,13 @@ interface BatchImportDialogProps {
 
 interface CredentialInput {
   refreshToken: string
+  authMethod?: string
   clientId?: string
   clientSecret?: string
+  tokenEndpoint?: string
+  scopes?: string
+  issuerUrl?: string
+  provider?: string
   region?: string
   authRegion?: string
   apiRegion?: string
@@ -166,11 +171,23 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
           // 添加凭据
           const clientId = cred.clientId?.trim() || undefined
           const clientSecret = cred.clientSecret?.trim() || undefined
-          const authMethod = clientId && clientSecret ? 'idc' : 'social'
+          const tokenEndpoint = cred.tokenEndpoint?.trim() || undefined
+          const scopes = cred.scopes?.trim() || undefined
+          const issuerUrl = cred.issuerUrl?.trim() || undefined
+          const provider = cred.provider?.trim() || undefined
+          const isExternalIdp =
+            cred.authMethod?.trim().toLowerCase() === 'external_idp' ||
+            provider?.toLowerCase() === 'externalidp' ||
+            Boolean(tokenEndpoint)
+          const authMethod = isExternalIdp ? 'external_idp' : clientId && clientSecret ? 'idc' : 'social'
 
           // idc 模式下必须同时提供 clientId 和 clientSecret
-          if (authMethod === 'social' && (clientId || clientSecret)) {
+          if (!isExternalIdp && authMethod === 'social' && (clientId || clientSecret)) {
             throw new Error('idc 模式需要同时提供 clientId 和 clientSecret')
+          }
+
+          if (isExternalIdp && (!clientId || !tokenEndpoint)) {
+            throw new Error('External IdP requires clientId and tokenEndpoint')
           }
 
           const addedCred = await addCredential({
@@ -180,6 +197,10 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
             apiRegion: cred.apiRegion?.trim() || undefined,
             clientId,
             clientSecret,
+            tokenEndpoint,
+            scopes,
+            issuerUrl,
+            provider,
             priority: cred.priority || 0,
             machineId: cred.machineId?.trim() || undefined,
           })

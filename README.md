@@ -112,6 +112,20 @@ IdC 认证：
 }
 ```
 
+Microsoft External IdP 认证：
+```json
+{
+   "refreshToken": "你的刷新token",
+   "expiresAt": "2025-12-31T02:32:45.144Z",
+   "authMethod": "external_idp",
+   "clientId": "你的Microsoft OAuth clientId",
+   "tokenEndpoint": "https://login.microsoftonline.com/tenant-id/oauth2/v2.0/token",
+   "scopes": "api://example/codewhisperer:conversations api://example/codewhisperer:completions offline_access",
+   "issuerUrl": "https://login.microsoftonline.com/tenant-id/v2.0",
+   "provider": "ExternalIdp"
+}
+```
+
 ### 3. 启动
 
 ```bash
@@ -239,9 +253,13 @@ docker run -d \
 | `refreshToken` | string | OAuth 刷新令牌                                  |
 | `profileArn`   | string | AWS Profile ARN（可选，登录时返回）                   |
 | `expiresAt`    | string | Token 过期时间 (RFC3339)                        |
-| `authMethod`   | string | 认证方式：`social` 或 `idc`                       |
-| `clientId`     | string | IdC 登录的客户端 ID（IdC 认证必填）                     |
-| `clientSecret` | string | IdC 登录的客户端密钥（IdC 认证必填）                      |
+| `authMethod`   | string | 认证方式：`social`、`idc` 或 `external_idp`          |
+| `clientId`     | string | IdC / External IdP 登录的客户端 ID（IdC 和 External IdP 认证必填） |
+| `clientSecret` | string | IdC 登录的客户端密钥（仅 IdC 认证必填，External IdP 不需要） |
+| `tokenEndpoint`| string | External IdP 的 OAuth token endpoint（External IdP 认证必填） |
+| `scopes`       | string | External IdP 刷新时请求的 scope（可选）              |
+| `issuerUrl`    | string | External IdP issuer URL（可选，便于记录来源）         |
+| `provider`     | string | External IdP 提供方标识（可选，Microsoft 链路通常为 `ExternalIdp`） |
 | `priority`     | number | 凭据优先级，数字越小越优先，默认为 0                         |
 | `region`       | string | 凭据级 Auth Region, 兼容字段                       |
 | `authRegion`   | string | 凭据级 Auth Region，用于 Token 刷新, 未配置时回退到 region |
@@ -255,6 +273,8 @@ docker run -d \
 说明：
 - IdC / Builder-ID / IAM 在本项目里属于同一种登录方式，配置时统一使用 `authMethod: "idc"`
 - 为兼容旧配置，`builder-id` / `iam` 仍可被识别，但会按 `idc` 处理
+- Microsoft External IdP 使用 `authMethod: "external_idp"`，必须提供 `clientId` 和 `tokenEndpoint`，不需要 `clientSecret`
+- 批量导入 / KAM 导入如果看到 `authMethod: "external_idp"`、`provider: "ExternalIdp"` 或 `tokenEndpoint`，会按 External IdP 处理
 
 #### 单凭据格式（旧格式，向后兼容）
 
@@ -293,10 +313,22 @@ docker run -d \
       "proxyPassword": "pass"
    },
    {
-      "refreshToken": "第三个凭据（显式不走代理）",
+      "refreshToken": "第三个凭据（Microsoft External IdP）",
+      "expiresAt": "2025-12-31T02:32:45.144Z",
+      "authMethod": "external_idp",
+      "clientId": "dab27a3f-8718-4db2-86cc-29fdd5bbaab7",
+      "tokenEndpoint": "https://login.microsoftonline.com/tenant-id/oauth2/v2.0/token",
+      "scopes": "api://example/codewhisperer:conversations api://example/codewhisperer:completions offline_access",
+      "issuerUrl": "https://login.microsoftonline.com/tenant-id/v2.0",
+      "provider": "ExternalIdp",
+      "region": "us-east-1",
+      "priority": 2
+   },
+   {
+      "refreshToken": "第四个凭据（显式不走代理）",
       "expiresAt": "2025-12-31T02:32:45.144Z",
       "authMethod": "social",
-      "priority": 2,
+      "priority": 3,
       "proxyUrl": "direct"
    }
 ]

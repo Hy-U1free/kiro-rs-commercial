@@ -44,3 +44,15 @@ pub struct IdcRefreshResponse {
     #[serde(default)]
     pub profile_arn: Option<String>,
 }
+
+/// External IdP token refresh response (OAuth 2.0).
+#[derive(Debug, Deserialize)]
+pub struct ExternalIdpRefreshResponse {
+    pub access_token: String,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    #[serde(default)]
+    pub expires_in: Option<i64>,
+    #[serde(default)]
+    pub token_type: Option<String>,
+}

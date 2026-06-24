@@ -24,6 +24,10 @@ export function EditCredentialDialog({ open, onOpenChange, credential }: EditCre
   const [apiRegion, setApiRegion] = useState('')
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
+  const [tokenEndpoint, setTokenEndpoint] = useState('')
+  const [scopes, setScopes] = useState('')
+  const [issuerUrl, setIssuerUrl] = useState('')
+  const [provider, setProvider] = useState('')
   const [machineId, setMachineId] = useState('')
   const [proxyUrl, setProxyUrl] = useState('')
   const [proxyUsername, setProxyUsername] = useState('')
@@ -38,6 +42,10 @@ export function EditCredentialDialog({ open, onOpenChange, credential }: EditCre
       setApiRegion('')
       setClientId('')
       setClientSecret('')
+      setTokenEndpoint('')
+      setScopes('')
+      setIssuerUrl('')
+      setProvider('')
       setMachineId('')
       setProxyUrl(credential.proxyUrl || '')
       setProxyUsername('')
@@ -54,6 +62,10 @@ export function EditCredentialDialog({ open, onOpenChange, credential }: EditCre
     if (apiRegion !== '') data.apiRegion = apiRegion
     if (clientId !== '') data.clientId = clientId
     if (clientSecret !== '') data.clientSecret = clientSecret
+    if (tokenEndpoint !== '') data.tokenEndpoint = tokenEndpoint
+    if (scopes !== '') data.scopes = scopes
+    if (issuerUrl !== '') data.issuerUrl = issuerUrl
+    if (provider !== '') data.provider = provider
     if (machineId !== '') data.machineId = machineId
     if (proxyUrl !== (credential.proxyUrl || '')) data.proxyUrl = proxyUrl
     if (proxyUsername !== '') data.proxyUsername = proxyUsername
@@ -79,6 +91,7 @@ export function EditCredentialDialog({ open, onOpenChange, credential }: EditCre
   }
 
   const isIdc = credential.authMethod === 'idc'
+  const isExternalIdp = credential.authMethod === 'external_idp'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -134,6 +147,56 @@ export function EditCredentialDialog({ open, onOpenChange, credential }: EditCre
                     placeholder="留空不修改"
                     value={clientSecret}
                     onChange={(e) => setClientSecret(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+              </>
+            )}
+
+            {isExternalIdp && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Client ID</label>
+                  <Input
+                    placeholder="Leave blank to keep unchanged"
+                    value={clientId}
+                    onChange={(e) => setClientId(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Token Endpoint</label>
+                  <Input
+                    placeholder="Leave blank to keep unchanged"
+                    value={tokenEndpoint}
+                    onChange={(e) => setTokenEndpoint(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Scopes</label>
+                  <Input
+                    placeholder="Leave blank to keep unchanged"
+                    value={scopes}
+                    onChange={(e) => setScopes(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Issuer URL</label>
+                  <Input
+                    placeholder="Leave blank to keep unchanged"
+                    value={issuerUrl}
+                    onChange={(e) => setIssuerUrl(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Provider</label>
+                  <Input
+                    placeholder="Leave blank to keep unchanged"
+                    value={provider}
+                    onChange={(e) => setProvider(e.target.value)}
                     disabled={isPending}
                   />
                 </div>

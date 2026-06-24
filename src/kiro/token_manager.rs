@@ -19,7 +19,8 @@ use crate::http_client::{ProxyConfig, build_client};
 use crate::kiro::machine_id;
 use crate::kiro::model::credentials::KiroCredentials;
 use crate::kiro::model::token_refresh::{
-    IdcRefreshRequest, IdcRefreshResponse, RefreshRequest, RefreshResponse,
+    ExternalIdpRefreshResponse, IdcRefreshRequest, IdcRefreshResponse, RefreshRequest,
+    RefreshResponse,
 };
 use crate::kiro::model::usage_limits::UsageLimitsResponse;
 use crate::model::config::Config;
@@ -111,6 +112,48 @@ fn sha256_hex(input: &str) -> String {
     format!("{:x}", result)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthRefreshMethod {
+    Social,
+    Idc,
+    ExternalIdp,
+}
+
+fn select_auth_refresh_method(credentials: &KiroCredentials) -> AuthRefreshMethod {
+    if let Some(auth_method) = credentials.auth_method.as_deref() {
+        if auth_method.eq_ignore_ascii_case("idc")
+            || auth_method.eq_ignore_ascii_case("builder-id")
+            || auth_method.eq_ignore_ascii_case("iam")
+        {
+            return AuthRefreshMethod::Idc;
+        }
+
+        if auth_method.eq_ignore_ascii_case("external_idp")
+            || auth_method.eq_ignore_ascii_case("external-idp")
+            || auth_method.eq_ignore_ascii_case("externalidp")
+        {
+            return AuthRefreshMethod::ExternalIdp;
+        }
+
+        return AuthRefreshMethod::Social;
+    }
+
+    if credentials
+        .provider
+        .as_deref()
+        .is_some_and(|provider| provider.eq_ignore_ascii_case("ExternalIdp"))
+        || credentials.token_endpoint.is_some()
+    {
+        return AuthRefreshMethod::ExternalIdp;
+    }
+
+    if credentials.client_id.is_some() && credentials.client_secret.is_some() {
+        AuthRefreshMethod::Idc
+    } else {
+        AuthRefreshMethod::Social
+    }
+}
+
 /// 验证 refreshToken 的基本有效性
 pub(crate) fn validate_refresh_token(credentials: &KiroCredentials) -> anyhow::Result<()> {
     let refresh_token = credentials
@@ -144,21 +187,12 @@ pub(crate) async fn refresh_token(
 
     // 根据 auth_method 选择刷新方式
     // 如果未指定 auth_method，根据是否有 clientId/clientSecret 自动判断
-    let auth_method = credentials.auth_method.as_deref().unwrap_or_else(|| {
-        if credentials.client_id.is_some() && credentials.client_secret.is_some() {
-            "idc"
-        } else {
-            "social"
+    match select_auth_refresh_method(credentials) {
+        AuthRefreshMethod::Idc => refresh_idc_token(credentials, config, proxy).await,
+        AuthRefreshMethod::ExternalIdp => {
+            refresh_external_idp_token(credentials, config, proxy).await
         }
-    });
-
-    if auth_method.eq_ignore_ascii_case("idc")
-        || auth_method.eq_ignore_ascii_case("builder-id")
-        || auth_method.eq_ignore_ascii_case("iam")
-    {
-        refresh_idc_token(credentials, config, proxy).await
-    } else {
-        refresh_social_token(credentials, config, proxy).await
+        AuthRefreshMethod::Social => refresh_social_token(credentials, config, proxy).await,
     }
 }
 
@@ -234,7 +268,108 @@ async fn refresh_social_token(
     Ok(new_credentials)
 }
 
-/// IdC Token 刷新所需的 x-amz-user-agent header
+/// Required External IdP OAuth fields.
+fn required_external_idp_client_id(credentials: &KiroCredentials) -> anyhow::Result<&str> {
+    credentials
+        .client_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|client_id| !client_id.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("External IdP 刷新需要 clientId"))
+}
+
+fn required_external_idp_token_endpoint(credentials: &KiroCredentials) -> anyhow::Result<&str> {
+    credentials
+        .token_endpoint
+        .as_deref()
+        .map(str::trim)
+        .filter(|token_endpoint| !token_endpoint.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("External IdP 刷新需要 tokenEndpoint"))
+}
+
+fn validate_external_idp_credentials(credentials: &KiroCredentials) -> anyhow::Result<()> {
+    required_external_idp_client_id(credentials)?;
+    required_external_idp_token_endpoint(credentials)?;
+    Ok(())
+}
+
+fn build_external_idp_refresh_form(
+    credentials: &KiroCredentials,
+) -> anyhow::Result<Vec<(String, String)>> {
+    let client_id = required_external_idp_client_id(credentials)?;
+    let refresh_token = credentials
+        .refresh_token
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("缺少 refreshToken"))?;
+
+    let mut form = vec![
+        ("client_id".to_string(), client_id.to_string()),
+        ("grant_type".to_string(), "refresh_token".to_string()),
+        ("refresh_token".to_string(), refresh_token.to_string()),
+    ];
+
+    if let Some(scopes) = credentials
+        .scopes
+        .as_deref()
+        .map(str::trim)
+        .filter(|scopes| !scopes.is_empty())
+    {
+        form.push(("scope".to_string(), scopes.to_string()));
+    }
+
+    Ok(form)
+}
+
+async fn refresh_external_idp_token(
+    credentials: &KiroCredentials,
+    config: &Config,
+    proxy: Option<&ProxyConfig>,
+) -> anyhow::Result<KiroCredentials> {
+    tracing::info!("正在刷新 External IdP Token...");
+
+    validate_external_idp_credentials(credentials)?;
+    let token_endpoint = required_external_idp_token_endpoint(credentials)?;
+    let form = build_external_idp_refresh_form(credentials)?;
+
+    let client = build_client(proxy, 60, config.tls_backend)?;
+    let response = client
+        .post(token_endpoint)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .form(&form)
+        .send()
+        .await?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body_text = response.text().await.unwrap_or_default();
+        let error_msg = match status.as_u16() {
+            401 => "External IdP 凭证已过期或无效，需要重新认证",
+            403 => "External IdP 权限不足，无法刷新 Token",
+            429 => "External IdP 请求过于频繁，已被限流",
+            500..=599 => "External IdP 服务暂时不可用",
+            _ => "External IdP Token 刷新失败",
+        };
+        bail!("{}: {} {}", error_msg, status, body_text);
+    }
+
+    let data: ExternalIdpRefreshResponse = response.json().await?;
+
+    let mut new_credentials = credentials.clone();
+    new_credentials.access_token = Some(data.access_token);
+
+    if let Some(new_refresh_token) = data.refresh_token {
+        new_credentials.refresh_token = Some(new_refresh_token);
+    }
+
+    if let Some(expires_in) = data.expires_in {
+        let expires_at = Utc::now() + Duration::seconds(expires_in);
+        new_credentials.expires_at = Some(expires_at.to_rfc3339());
+    }
+
+    Ok(new_credentials)
+}
+
 const IDC_AMZ_USER_AGENT: &str = "aws-sdk-js/3.738.0 ua/2.1 os/other lang/js md/browser#unknown_unknown api/sso-oidc#3.738.0 m/E KiroIDE";
 
 /// Kiro auth token 文件的 region 字段结构
@@ -1575,6 +1710,10 @@ impl MultiTokenManager {
         });
         validated_cred.client_id = new_cred.client_id;
         validated_cred.client_secret = new_cred.client_secret;
+        validated_cred.token_endpoint = new_cred.token_endpoint;
+        validated_cred.scopes = new_cred.scopes;
+        validated_cred.issuer_url = new_cred.issuer_url;
+        validated_cred.provider = new_cred.provider;
         validated_cred.region = new_cred.region;
         validated_cred.auth_region = new_cred.auth_region;
         validated_cred.api_region = new_cred.api_region;
@@ -1654,6 +1793,34 @@ impl MultiTokenManager {
                 if let Some(ref cs) = update.client_secret {
                     cred.client_secret = Some(cs.clone());
                 }
+                if let Some(ref endpoint) = update.token_endpoint {
+                    cred.token_endpoint = if endpoint.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint.clone())
+                    };
+                }
+                if let Some(ref scopes) = update.scopes {
+                    cred.scopes = if scopes.is_empty() {
+                        None
+                    } else {
+                        Some(scopes.clone())
+                    };
+                }
+                if let Some(ref issuer_url) = update.issuer_url {
+                    cred.issuer_url = if issuer_url.is_empty() {
+                        None
+                    } else {
+                        Some(issuer_url.clone())
+                    };
+                }
+                if let Some(ref provider) = update.provider {
+                    cred.provider = if provider.is_empty() {
+                        None
+                    } else {
+                        Some(provider.clone())
+                    };
+                }
                 if let Some(ref ar) = update.auth_region {
                     cred.auth_region = if ar.is_empty() { None } else { Some(ar.clone()) };
                 }
@@ -1713,6 +1880,34 @@ impl MultiTokenManager {
         }
         if let Some(ref cs) = update.client_secret {
             cred.client_secret = if cs.is_empty() { None } else { Some(cs.clone()) };
+        }
+        if let Some(ref endpoint) = update.token_endpoint {
+            cred.token_endpoint = if endpoint.is_empty() {
+                None
+            } else {
+                Some(endpoint.clone())
+            };
+        }
+        if let Some(ref scopes) = update.scopes {
+            cred.scopes = if scopes.is_empty() {
+                None
+            } else {
+                Some(scopes.clone())
+            };
+        }
+        if let Some(ref issuer_url) = update.issuer_url {
+            cred.issuer_url = if issuer_url.is_empty() {
+                None
+            } else {
+                Some(issuer_url.clone())
+            };
+        }
+        if let Some(ref provider) = update.provider {
+            cred.provider = if provider.is_empty() {
+                None
+            } else {
+                Some(provider.clone())
+            };
         }
         if let Some(ref ar) = update.auth_region {
             cred.auth_region = if ar.is_empty() { None } else { Some(ar.clone()) };
@@ -2013,6 +2208,139 @@ mod tests {
             result,
             "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
         );
+    }
+
+    #[test]
+    fn test_external_idp_auth_method_is_detected() {
+        let mut credentials = KiroCredentials::default();
+        credentials.auth_method = Some("external_idp".to_string());
+        credentials.client_id = Some("client-123".to_string());
+
+        assert_eq!(
+            select_auth_refresh_method(&credentials),
+            AuthRefreshMethod::ExternalIdp
+        );
+    }
+
+    #[test]
+    fn test_external_idp_validation_rejects_missing_client_id() {
+        let mut credentials = KiroCredentials::default();
+        credentials.refresh_token = Some("a".repeat(150));
+        credentials.auth_method = Some("external_idp".to_string());
+        credentials.token_endpoint =
+            Some("https://login.microsoftonline.com/tenant/oauth2/v2.0/token".to_string());
+
+        let error = validate_external_idp_credentials(&credentials)
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert!(error.contains("clientId"), "actual error: {}", error);
+    }
+
+    #[test]
+    fn test_external_idp_validation_rejects_missing_token_endpoint() {
+        let mut credentials = KiroCredentials::default();
+        credentials.refresh_token = Some("a".repeat(150));
+        credentials.auth_method = Some("external_idp".to_string());
+        credentials.client_id = Some("client-123".to_string());
+
+        let error = validate_external_idp_credentials(&credentials)
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert!(error.contains("tokenEndpoint"), "actual error: {}", error);
+    }
+
+    #[test]
+    fn test_external_idp_refresh_form_contains_oauth_fields() {
+        let mut credentials = KiroCredentials::default();
+        credentials.refresh_token = Some("refresh-token".to_string());
+        credentials.client_id = Some("client-123".to_string());
+        credentials.token_endpoint =
+            Some("https://login.microsoftonline.com/tenant/oauth2/v2.0/token".to_string());
+        credentials.scopes = Some("api://example/.default offline_access".to_string());
+
+        let form = build_external_idp_refresh_form(&credentials).unwrap();
+
+        assert_eq!(
+            form,
+            vec![
+                ("client_id".to_string(), "client-123".to_string()),
+                ("grant_type".to_string(), "refresh_token".to_string()),
+                ("refresh_token".to_string(), "refresh-token".to_string()),
+                (
+                    "scope".to_string(),
+                    "api://example/.default offline_access".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_admin_external_idp_update_fields_are_applied() {
+        let mut credentials = KiroCredentials::default();
+        let update = crate::admin::types::UpdateCredentialRequest {
+            refresh_token: None,
+            auth_method: Some("external_idp".to_string()),
+            client_id: Some("client-123".to_string()),
+            client_secret: None,
+            token_endpoint: Some(
+                "https://login.microsoftonline.com/tenant/oauth2/v2.0/token".to_string(),
+            ),
+            scopes: Some("api://example/.default offline_access".to_string()),
+            issuer_url: Some("https://login.microsoftonline.com/tenant/v2.0".to_string()),
+            provider: Some("ExternalIdp".to_string()),
+            auth_region: None,
+            api_region: None,
+            machine_id: None,
+            proxy_url: None,
+            proxy_username: None,
+            proxy_password: None,
+        };
+
+        MultiTokenManager::apply_update_fields(&mut credentials, &update);
+
+        assert_eq!(credentials.auth_method, Some("external_idp".to_string()));
+        assert_eq!(credentials.client_id, Some("client-123".to_string()));
+        assert_eq!(
+            credentials.token_endpoint,
+            Some("https://login.microsoftonline.com/tenant/oauth2/v2.0/token".to_string())
+        );
+        assert_eq!(
+            credentials.scopes,
+            Some("api://example/.default offline_access".to_string())
+        );
+        assert_eq!(
+            credentials.issuer_url,
+            Some("https://login.microsoftonline.com/tenant/v2.0".to_string())
+        );
+        assert_eq!(credentials.provider, Some("ExternalIdp".to_string()));
+
+        let clear_update = crate::admin::types::UpdateCredentialRequest {
+            refresh_token: None,
+            auth_method: None,
+            client_id: None,
+            client_secret: None,
+            token_endpoint: Some(String::new()),
+            scopes: Some(String::new()),
+            issuer_url: Some(String::new()),
+            provider: Some(String::new()),
+            auth_region: None,
+            api_region: None,
+            machine_id: None,
+            proxy_url: None,
+            proxy_username: None,
+            proxy_password: None,
+        };
+
+        MultiTokenManager::apply_update_fields(&mut credentials, &clear_update);
+
+        assert_eq!(credentials.token_endpoint, None);
+        assert_eq!(credentials.scopes, None);
+        assert_eq!(credentials.issuer_url, None);
+        assert_eq!(credentials.provider, None);
     }
 
     #[tokio::test]

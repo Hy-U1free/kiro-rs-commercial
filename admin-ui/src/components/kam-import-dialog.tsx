@@ -29,6 +29,10 @@ interface KamAccount {
     clientSecret?: string
     region?: string
     authMethod?: string
+    tokenEndpoint?: string
+    scopes?: string
+    issuerUrl?: string
+    provider?: string
     startUrl?: string
   }
   machineId?: string
@@ -70,10 +74,33 @@ function normalizeToKamAccount(item: unknown): unknown {
   if (typeof obj.credentials === 'object' && obj.credentials !== null) return item
   // 顶层有 refreshToken，自动包装
   if (typeof obj.refreshToken === 'string' && obj.refreshToken.trim().length > 0) {
-    const { refreshToken, clientId, clientSecret, region, authMethod, startUrl, ...rest } = obj
+    const {
+      refreshToken,
+      clientId,
+      clientSecret,
+      region,
+      authMethod,
+      tokenEndpoint,
+      scopes,
+      issuerUrl,
+      provider,
+      startUrl,
+      ...rest
+    } = obj
     return {
       ...rest,
-      credentials: { refreshToken, clientId, clientSecret, region, authMethod, startUrl },
+      credentials: {
+        refreshToken,
+        clientId,
+        clientSecret,
+        region,
+        authMethod,
+        tokenEndpoint,
+        scopes,
+        issuerUrl,
+        provider,
+        startUrl,
+      },
     }
   }
   return item
@@ -241,11 +268,23 @@ export function KamImportDialog({ open, onOpenChange }: KamImportDialogProps) {
         try {
           const clientId = cred.clientId?.trim() || undefined
           const clientSecret = cred.clientSecret?.trim() || undefined
-          const authMethod = clientId && clientSecret ? 'idc' : 'social'
+          const tokenEndpoint = cred.tokenEndpoint?.trim() || undefined
+          const scopes = cred.scopes?.trim() || undefined
+          const issuerUrl = cred.issuerUrl?.trim() || undefined
+          const provider = cred.provider?.trim() || undefined
+          const isExternalIdp =
+            cred.authMethod?.trim().toLowerCase() === 'external_idp' ||
+            provider?.toLowerCase() === 'externalidp' ||
+            Boolean(tokenEndpoint)
+          const authMethod = isExternalIdp ? 'external_idp' : clientId && clientSecret ? 'idc' : 'social'
 
           // idc 模式下必须同时提供 clientId 和 clientSecret
-          if (authMethod === 'social' && (clientId || clientSecret)) {
+          if (!isExternalIdp && authMethod === 'social' && (clientId || clientSecret)) {
             throw new Error('idc 模式需要同时提供 clientId 和 clientSecret')
+          }
+
+          if (isExternalIdp && (!clientId || !tokenEndpoint)) {
+            throw new Error('External IdP requires clientId and tokenEndpoint')
           }
 
           const addedCred = await addCredential({
@@ -254,6 +293,10 @@ export function KamImportDialog({ open, onOpenChange }: KamImportDialogProps) {
             authRegion: cred.region?.trim() || undefined,
             clientId,
             clientSecret,
+            tokenEndpoint,
+            scopes,
+            issuerUrl,
+            provider,
             machineId: account.machineId?.trim() || undefined,
           })
 

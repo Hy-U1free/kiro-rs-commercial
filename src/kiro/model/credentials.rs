@@ -46,6 +46,22 @@ pub struct KiroCredentials {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_secret: Option<String>,
 
+    /// OAuth token endpoint (External IdP)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_endpoint: Option<String>,
+
+    /// OAuth scopes (External IdP)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scopes: Option<String>,
+
+    /// OAuth issuer URL (External IdP metadata)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issuer_url: Option<String>,
+
+    /// OAuth provider name (External IdP metadata)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+
     /// 凭据优先级（数字越小优先级越高，默认为 0）
     #[serde(default)]
     #[serde(skip_serializing_if = "is_zero")]
@@ -318,6 +334,38 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_external_idp_credentials() {
+        let json = r#"{
+            "refreshToken": "test_refresh",
+            "authMethod": "external_idp",
+            "clientId": "client-123",
+            "tokenEndpoint": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
+            "scopes": "api://example/.default offline_access",
+            "issuerUrl": "https://login.microsoftonline.com/tenant/v2.0",
+            "provider": "ExternalIdp"
+        }"#;
+
+        let creds = KiroCredentials::from_json(json).unwrap();
+
+        assert_eq!(creds.refresh_token, Some("test_refresh".to_string()));
+        assert_eq!(creds.auth_method, Some("external_idp".to_string()));
+        assert_eq!(creds.client_id, Some("client-123".to_string()));
+        assert_eq!(
+            creds.token_endpoint,
+            Some("https://login.microsoftonline.com/tenant/oauth2/v2.0/token".to_string())
+        );
+        assert_eq!(
+            creds.scopes,
+            Some("api://example/.default offline_access".to_string())
+        );
+        assert_eq!(
+            creds.issuer_url,
+            Some("https://login.microsoftonline.com/tenant/v2.0".to_string())
+        );
+        assert_eq!(creds.provider, Some("ExternalIdp".to_string()));
+    }
+
+    #[test]
     fn test_to_json() {
         let creds = KiroCredentials {
             id: None,
@@ -328,6 +376,10 @@ mod tests {
             auth_method: Some("social".to_string()),
             client_id: None,
             client_secret: None,
+            token_endpoint: None,
+            scopes: None,
+            issuer_url: None,
+            provider: None,
             priority: 0,
             region: None,
             auth_region: None,
@@ -446,6 +498,10 @@ mod tests {
             auth_method: None,
             client_id: None,
             client_secret: None,
+            token_endpoint: None,
+            scopes: None,
+            issuer_url: None,
+            provider: None,
             priority: 0,
             region: Some("eu-west-1".to_string()),
             auth_region: None,
@@ -476,6 +532,10 @@ mod tests {
             auth_method: None,
             client_id: None,
             client_secret: None,
+            token_endpoint: None,
+            scopes: None,
+            issuer_url: None,
+            provider: None,
             priority: 0,
             region: None,
             auth_region: None,
@@ -588,6 +648,10 @@ mod tests {
             auth_method: Some("social".to_string()),
             client_id: None,
             client_secret: None,
+            token_endpoint: None,
+            scopes: None,
+            issuer_url: None,
+            provider: None,
             priority: 3,
             region: Some("us-west-2".to_string()),
             auth_region: None,
