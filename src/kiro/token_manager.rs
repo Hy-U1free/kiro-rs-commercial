@@ -490,6 +490,32 @@ async fn refresh_idc_token(
 /// getUsageLimits API 所需的 x-amz-user-agent header 前缀
 const USAGE_LIMITS_AMZ_USER_AGENT_PREFIX: &str = "aws-sdk-js/1.0.0";
 
+fn is_valid_profile_arn(profile_arn: &str) -> bool {
+    let trimmed = profile_arn.trim();
+    !trimmed.is_empty()
+        && trimmed.starts_with("arn:aws")
+        && trimmed.contains(":profile/")
+        && !trimmed.chars().any(char::is_whitespace)
+}
+
+fn normalize_profile_arn(profile_arn: Option<String>) -> Option<String> {
+    profile_arn
+        .map(|arn| arn.trim().to_string())
+        .filter(|arn| is_valid_profile_arn(arn))
+}
+
+fn append_profile_arn_query(url: &mut String, profile_arn: Option<&str>) {
+    let Some(profile_arn) = profile_arn.map(str::trim).filter(|arn| !arn.is_empty()) else {
+        return;
+    };
+
+    if is_valid_profile_arn(profile_arn) {
+        url.push_str(&format!("&profileArn={}", urlencoding::encode(profile_arn)));
+    } else {
+        tracing::warn!("Ignoring invalid profileArn while fetching usage limits");
+    }
+}
+
 /// 获取使用额度信息
 pub(crate) async fn get_usage_limits(
     credentials: &KiroCredentials,
@@ -512,10 +538,7 @@ pub(crate) async fn get_usage_limits(
         host
     );
 
-    // profileArn 是可选的
-    if let Some(profile_arn) = &credentials.profile_arn {
-        url.push_str(&format!("&profileArn={}", urlencoding::encode(profile_arn)));
-    }
+    append_profile_arn_query(&mut url, credentials.profile_arn.as_deref());
 
     // 构建 User-Agent headers
     let user_agent = format!(
@@ -1474,7 +1497,12 @@ impl MultiTokenManager {
                             m.to_string()
                         }
                     }),
-                    has_profile_arn: e.credentials.profile_arn.is_some(),
+                    has_profile_arn: e
+                        .credentials
+                        .profile_arn
+                        .as_deref()
+                        .map(is_valid_profile_arn)
+                        .unwrap_or(false),
                     expires_at: e.credentials.expires_at.clone(),
                     refresh_token_hash: e.credentials.refresh_token.as_deref().map(sha256_hex),
                     email: e.credentials.email.clone(),
@@ -1714,9 +1742,8 @@ impl MultiTokenManager {
         validated_cred.scopes = new_cred.scopes;
         validated_cred.issuer_url = new_cred.issuer_url;
         validated_cred.provider = new_cred.provider;
-        if new_cred.profile_arn.is_some() {
-            validated_cred.profile_arn = new_cred.profile_arn;
-        }
+        validated_cred.profile_arn = normalize_profile_arn(new_cred.profile_arn)
+            .or_else(|| normalize_profile_arn(validated_cred.profile_arn));
         validated_cred.region = new_cred.region;
         validated_cred.auth_region = new_cred.auth_region;
         validated_cred.api_region = new_cred.api_region;
@@ -1828,7 +1855,7 @@ impl MultiTokenManager {
                     cred.profile_arn = if profile_arn.is_empty() {
                         None
                     } else {
-                        Some(profile_arn.clone())
+                        normalize_profile_arn(Some(profile_arn.clone()))
                     };
                 }
                 if let Some(ref ar) = update.auth_region {
@@ -1849,7 +1876,7 @@ impl MultiTokenManager {
             if let Some(entry) = entries.iter_mut().find(|e| e.id == id) {
                 entry.credentials.access_token = validated.access_token;
                 entry.credentials.expires_at = validated.expires_at;
-                if let Some(profile_arn) = validated.profile_arn {
+                if let Some(profile_arn) = normalize_profile_arn(validated.profile_arn) {
                     entry.credentials.profile_arn = Some(profile_arn);
                 }
                 if let Some(rt) = validated.refresh_token {
@@ -1923,7 +1950,7 @@ impl MultiTokenManager {
             cred.profile_arn = if profile_arn.is_empty() {
                 None
             } else {
-                Some(profile_arn.clone())
+                normalize_profile_arn(Some(profile_arn.clone()))
             };
         }
         if let Some(ref ar) = update.auth_region {
@@ -2292,6 +2319,55 @@ mod tests {
                     "api://example/.default offline_access".to_string()
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn test_usage_limits_query_rejects_client_id_as_profile_arn() {
+        let mut url =
+            "https://q.us-east-1.amazonaws.com/getUsageLimits?origin=AI_EDITOR&resourceType=AGENTIC_REQUEST"
+                .to_string();
+
+        append_profile_arn_query(&mut url, Some("dab27a3f-8718-4db2-86cc-29fdd5bbaab7"));
+
+        assert!(!url.contains("profileArn="), "actual URL: {}", url);
+    }
+
+    #[test]
+    fn test_usage_limits_query_appends_valid_profile_arn() {
+        let mut url =
+            "https://q.us-east-1.amazonaws.com/getUsageLimits?origin=AI_EDITOR&resourceType=AGENTIC_REQUEST"
+                .to_string();
+
+        append_profile_arn_query(
+            &mut url,
+            Some("arn:aws:codewhisperer:us-east-1:123456789012:profile/ABCDEF"),
+        );
+
+        assert!(
+            url.contains(
+                "profileArn=arn%3Aaws%3Acodewhisperer%3Aus-east-1%3A123456789012%3Aprofile%2FABCDEF"
+            ),
+            "actual URL: {}",
+            url
+        );
+    }
+
+    #[test]
+    fn test_normalize_profile_arn_rejects_client_id() {
+        assert_eq!(
+            normalize_profile_arn(Some("dab27a3f-8718-4db2-86cc-29fdd5bbaab7".to_string())),
+            None
+        );
+    }
+
+    #[test]
+    fn test_normalize_profile_arn_keeps_valid_arn() {
+        assert_eq!(
+            normalize_profile_arn(Some(
+                " arn:aws:codewhisperer:us-east-1:123456789012:profile/ABCDEF ".to_string()
+            )),
+            Some("arn:aws:codewhisperer:us-east-1:123456789012:profile/ABCDEF".to_string())
         );
     }
 
