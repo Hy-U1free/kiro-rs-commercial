@@ -516,6 +516,14 @@ fn append_profile_arn_query(url: &mut String, profile_arn: Option<&str>) {
     }
 }
 
+fn usage_limits_token_type(credentials: &KiroCredentials) -> Option<&'static str> {
+    if select_auth_refresh_method(credentials) == AuthRefreshMethod::ExternalIdp {
+        Some("EXTERNAL_IDP")
+    } else {
+        None
+    }
+}
+
 /// 获取使用额度信息
 pub(crate) async fn get_usage_limits(
     credentials: &KiroCredentials,
@@ -553,7 +561,7 @@ pub(crate) async fn get_usage_limits(
 
     let client = build_client(proxy, 60, config.tls_backend)?;
 
-    let response = client
+    let mut request = client
         .get(&url)
         .header("x-amz-user-agent", &amz_user_agent)
         .header("User-Agent", &user_agent)
@@ -561,9 +569,13 @@ pub(crate) async fn get_usage_limits(
         .header("amz-sdk-invocation-id", uuid::Uuid::new_v4().to_string())
         .header("amz-sdk-request", "attempt=1; max=1")
         .header("Authorization", format!("Bearer {}", token))
-        .header("Connection", "close")
-        .send()
-        .await?;
+        .header("Connection", "close");
+
+    if let Some(token_type) = usage_limits_token_type(credentials) {
+        request = request.header("TokenType", token_type);
+    }
+
+    let response = request.send().await?;
 
     let status = response.status();
     if !status.is_success() {
@@ -2369,6 +2381,25 @@ mod tests {
             )),
             Some("arn:aws:codewhisperer:us-east-1:123456789012:profile/ABCDEF".to_string())
         );
+    }
+
+    #[test]
+    fn test_usage_limits_token_type_for_external_idp() {
+        let mut credentials = KiroCredentials::default();
+        credentials.auth_method = Some("external_idp".to_string());
+
+        assert_eq!(
+            usage_limits_token_type(&credentials),
+            Some("EXTERNAL_IDP")
+        );
+    }
+
+    #[test]
+    fn test_usage_limits_token_type_omitted_for_social() {
+        let mut credentials = KiroCredentials::default();
+        credentials.auth_method = Some("social".to_string());
+
+        assert_eq!(usage_limits_token_type(&credentials), None);
     }
 
     #[test]
