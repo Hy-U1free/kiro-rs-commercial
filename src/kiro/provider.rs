@@ -15,7 +15,9 @@ use uuid::Uuid;
 use crate::http_client::{ProxyConfig, build_client};
 use crate::kiro::machine_id;
 use crate::kiro::model::credentials::KiroCredentials;
-use crate::kiro::token_manager::{CallContext, MultiTokenManager};
+use crate::kiro::token_manager::{
+    is_valid_profile_arn, requires_external_idp_token_type, CallContext, MultiTokenManager,
+};
 use crate::model::config::TlsBackend;
 use crate::model::rpm::RpmTracker;
 use parking_lot::Mutex;
@@ -163,13 +165,23 @@ impl KiroProvider {
     ///
     /// 将凭据的 profile_arn 注入到请求体 JSON 中
     fn inject_profile_arn(request_body: &str, profile_arn: &Option<String>) -> String {
-        if let Some(arn) = profile_arn {
+        if let Some(arn) = profile_arn
+            .as_deref()
+            .map(str::trim)
+            .filter(|arn| is_valid_profile_arn(arn))
+        {
             if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(request_body) {
-                json["profileArn"] = serde_json::Value::String(arn.clone());
+                json["profileArn"] = serde_json::Value::String(arn.to_string());
                 if let Ok(body) = serde_json::to_string(&json) {
                     return body;
                 }
             }
+        } else if profile_arn
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|arn| !arn.is_empty())
+        {
+            tracing::warn!("Ignoring invalid profileArn while building Kiro API request");
         }
         request_body.to_string()
     }
@@ -222,6 +234,9 @@ impl KiroProvider {
             AUTHORIZATION,
             HeaderValue::from_str(&format!("Bearer {}", ctx.token)).unwrap(),
         );
+        if requires_external_idp_token_type(&ctx.credentials) {
+            headers.insert("TokenType", HeaderValue::from_static("EXTERNAL_IDP"));
+        }
         Ok(headers)
     }
 
@@ -265,6 +280,9 @@ impl KiroProvider {
             "Authorization",
             HeaderValue::from_str(&format!("Bearer {}", ctx.token)).unwrap(),
         );
+        if requires_external_idp_token_type(&ctx.credentials) {
+            headers.insert("TokenType", HeaderValue::from_static("EXTERNAL_IDP"));
+        }
         Ok(headers)
     }
 
@@ -775,6 +793,89 @@ mod tests {
         );
         // Connection: close 已移除，启用 keep-alive 连接复用
         assert!(headers.get("connection").is_none());
+    }
+
+    #[test]
+    fn test_build_headers_adds_token_type_for_external_idp() {
+        let mut credentials = KiroCredentials::default();
+        credentials.auth_method = Some("external_idp".to_string());
+        credentials.refresh_token = Some("a".repeat(150));
+
+        let provider = create_test_provider(Config::default(), credentials.clone());
+        let ctx = CallContext {
+            id: 1,
+            credentials,
+            token: "test_token".to_string(),
+        };
+
+        let headers = provider.build_headers(&ctx).unwrap();
+
+        assert_eq!(headers.get("TokenType").unwrap(), "EXTERNAL_IDP");
+    }
+
+    #[test]
+    fn test_build_headers_omits_token_type_for_social() {
+        let mut credentials = KiroCredentials::default();
+        credentials.auth_method = Some("social".to_string());
+        credentials.refresh_token = Some("a".repeat(150));
+
+        let provider = create_test_provider(Config::default(), credentials.clone());
+        let ctx = CallContext {
+            id: 1,
+            credentials,
+            token: "test_token".to_string(),
+        };
+
+        let headers = provider.build_headers(&ctx).unwrap();
+
+        assert!(headers.get("TokenType").is_none());
+    }
+
+    #[test]
+    fn test_build_mcp_headers_adds_token_type_for_external_idp() {
+        let mut credentials = KiroCredentials::default();
+        credentials.auth_method = Some("external_idp".to_string());
+        credentials.refresh_token = Some("a".repeat(150));
+
+        let provider = create_test_provider(Config::default(), credentials.clone());
+        let ctx = CallContext {
+            id: 1,
+            credentials,
+            token: "test_token".to_string(),
+        };
+
+        let headers = provider.build_mcp_headers(&ctx).unwrap();
+
+        assert_eq!(headers.get("TokenType").unwrap(), "EXTERNAL_IDP");
+    }
+
+    #[test]
+    fn test_inject_profile_arn_ignores_client_id() {
+        let request_body = r#"{"conversationState":{}}"#;
+        let body = KiroProvider::inject_profile_arn(
+            request_body,
+            &Some("dab27a3f-8718-4db2-86cc-29fdd5bbaab7".to_string()),
+        );
+
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+
+        assert!(json.get("profileArn").is_none(), "actual body: {}", body);
+    }
+
+    #[test]
+    fn test_inject_profile_arn_keeps_valid_profile_arn() {
+        let request_body = r#"{"conversationState":{}}"#;
+        let body = KiroProvider::inject_profile_arn(
+            request_body,
+            &Some("arn:aws:codewhisperer:us-east-1:123456789012:profile/ABCDEF".to_string()),
+        );
+
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+
+        assert_eq!(
+            json.get("profileArn").and_then(|value| value.as_str()),
+            Some("arn:aws:codewhisperer:us-east-1:123456789012:profile/ABCDEF")
+        );
     }
 
     #[test]

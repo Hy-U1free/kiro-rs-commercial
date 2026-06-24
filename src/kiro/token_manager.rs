@@ -490,7 +490,7 @@ async fn refresh_idc_token(
 /// getUsageLimits API 所需的 x-amz-user-agent header 前缀
 const USAGE_LIMITS_AMZ_USER_AGENT_PREFIX: &str = "aws-sdk-js/1.0.0";
 
-fn is_valid_profile_arn(profile_arn: &str) -> bool {
+pub(crate) fn is_valid_profile_arn(profile_arn: &str) -> bool {
     let trimmed = profile_arn.trim();
     !trimmed.is_empty()
         && trimmed.starts_with("arn:aws")
@@ -516,8 +516,12 @@ fn append_profile_arn_query(url: &mut String, profile_arn: Option<&str>) {
     }
 }
 
+pub(crate) fn requires_external_idp_token_type(credentials: &KiroCredentials) -> bool {
+    select_auth_refresh_method(credentials) == AuthRefreshMethod::ExternalIdp
+}
+
 fn usage_limits_token_type(credentials: &KiroCredentials) -> Option<&'static str> {
-    if select_auth_refresh_method(credentials) == AuthRefreshMethod::ExternalIdp {
+    if requires_external_idp_token_type(credentials) {
         Some("EXTERNAL_IDP")
     } else {
         None
